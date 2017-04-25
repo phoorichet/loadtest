@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sync"
 )
 
 func producer(total int) chan *http.Request {
@@ -17,53 +18,64 @@ func producer(total int) chan *http.Request {
 			// enqueue the generated request
 			queue <- req
 		}
-		// close the channel when then number of generated requests reach total
+		// close the channel when then number of generated requests reaches total
 		close(queue)
 	}()
 	return queue
 }
 
-func consumer(queue chan *http.Request, id int) {
+func consumer(queue chan *http.Request, id int, wg *sync.WaitGroup) {
+	// add wait group and clean up when returning
+	defer func() {
+		wg.Done()
+	}()
+
 	// create http client
 	client := &http.Client{}
 
-	// consumer runs forever until the queue is closed
+	// consumer runs forever unless the queue is closed
 	for {
 		select {
 		case req, ok := <-queue:
 			if !ok {
 				// not ok means queue is closed
-				// we stop consumer for loop here
-				break
+				// we exit the closure
+				return
 			}
 
 			// fire the request
 			resp, err := client.Do(req)
 			if err != nil {
-				// continue the the next request for now
-				continue
+				fmt.Printf("error: %v", err)
+				continue // continue select
 			}
 			defer resp.Body.Close()
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				fmt.Printf("error: %v", err)
-				continue
+				continue // continue select
 			}
-
 			fmt.Printf("consumer id %d, resp: %s\n", id, string(body))
+
 		}
 	}
+
 }
 
 func main() {
 	// create fixed size queue
-	queue := producer(100)
+	queue := producer(1000)
+
+	// create wait group
+	wg := &sync.WaitGroup{}
 
 	// create consumers to consume work in the queue
 	consumerCount := 10
 	for i := 0; i < consumerCount; i++ {
-		go consumer(queue, i)
+		wg.Add(1)
+		go consumer(queue, i, wg)
 	}
 
-	// time.Sleep(5 * time.Second)
+	// block until all the consumers are done
+	wg.Wait()
 }
