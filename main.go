@@ -25,7 +25,7 @@ func producer(total int) chan *http.Request {
 }
 
 func consumer(queue chan *http.Request, id int, wg *sync.WaitGroup) {
-	// add wait group and clean up when returning
+	// declement wait to clean up when returning
 	defer func() {
 		wg.Done()
 	}()
@@ -39,7 +39,7 @@ func consumer(queue chan *http.Request, id int, wg *sync.WaitGroup) {
 		case req, ok := <-queue:
 			if !ok {
 				// not ok means queue is closed
-				// we exit the closure
+				// we exit the func
 				return
 			}
 
